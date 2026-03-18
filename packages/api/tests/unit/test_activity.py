@@ -75,7 +75,6 @@ class TestActivity:
                 )
             )
             .with_recipient(bot)
-            .with_reply_to_id("3")
             .with_service_url("http://localhost")
             .with_timestamp(datetime.now())
             .with_local_timestamp(datetime.now())
@@ -93,7 +92,6 @@ class TestActivity:
             conversation=chat,
         )
         assert activity.recipient == bot
-        assert activity.reply_to_id == "3"
         assert activity.service_url == "http://localhost"
         assert activity.timestamp is not None
         assert activity.local_timestamp is not None
