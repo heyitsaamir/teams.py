@@ -90,6 +90,10 @@ class MessageActivity(_MessageBase, ActivityBase):
 
         Returns:
             List of quoted reply entities, empty if none
+
+        .. warning:: Preview
+            This API is in preview and may change in the future.
+            Diagnostic: ExperimentalTeamsQuotedReplies
         """
         return [e for e in (self.entities or []) if isinstance(e, QuotedReplyEntity)]
 
@@ -419,6 +423,10 @@ class MessageActivityInput(_MessageBase, ActivityInputBase):
 
         Returns:
             Self for method chaining
+
+        .. warning:: Preview
+            This API is in preview and may change in the future.
+            Diagnostic: ExperimentalTeamsQuotedReplies
         """
         if not self.entities:
             self.entities = []
