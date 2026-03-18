@@ -38,7 +38,9 @@ def create_basic_adaptive_card() -> AdaptiveCard:
             ToggleInput(label="Notify me").with_id("notify"),
             ActionSet(
                 actions=[
-                    ExecuteAction(title="Submit").with_data(SubmitActionData().with_data({"action": "submit_basic"})).with_associated_inputs("auto")
+                    ExecuteAction(title="Submit")
+                    .with_data(SubmitActionData().with_data({"action": "submit_basic"}))
+                    .with_associated_inputs("auto")
                 ]
             ),
         ],
@@ -135,7 +137,9 @@ def create_profile_card_input_validation() -> AdaptiveCard:
             TextInput(id="location").with_label("Location"),
             ActionSet(
                 actions=[
-                    ExecuteAction(title="Save").with_data(SubmitActionData().with_data({"action": "save_profile"})).with_associated_inputs("auto")
+                    ExecuteAction(title="Save")
+                    .with_data(SubmitActionData().with_data({"action": "save_profile"}))
+                    .with_associated_inputs("auto")
                 ]
             ),
         ],
