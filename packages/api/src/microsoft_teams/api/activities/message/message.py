@@ -86,7 +86,7 @@ class MessageActivity(_MessageBase, ActivityBase):
 
     def get_quoted_messages(self) -> list[QuotedReplyEntity]:
         """
-        Get all quoted reply entities from the message.
+        Get all quoted reply entities from this message.
 
         Returns:
             List of quoted reply entities, empty if none
@@ -422,9 +422,7 @@ class MessageActivityInput(_MessageBase, ActivityInputBase):
         """
         if not self.entities:
             self.entities = []
-        self.entities.append(
-            QuotedReplyEntity(quoted_reply=QuotedReplyData(message_id=message_id))
-        )
+        self.entities.append(QuotedReplyEntity(quoted_reply=QuotedReplyData(message_id=message_id)))
         self.add_text(f'<quoted messageId="{message_id}"/>')
         if response:
             self.add_text(f" {response}")

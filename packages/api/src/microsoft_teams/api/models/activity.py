@@ -174,7 +174,6 @@ class ActivityInput(_ActivityBase):
             )
         return self
 
-
     def with_service_url(self, value: str) -> Self:
         """Set the service_url."""
         self.service_url = value
