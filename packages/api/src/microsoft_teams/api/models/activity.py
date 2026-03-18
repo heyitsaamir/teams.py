@@ -126,11 +126,6 @@ class ActivityInput(_ActivityBase):
         self.id = value
         return self
 
-    def with_reply_to_id(self, value: str) -> Self:
-        """Set the reply_to_id."""
-        self.reply_to_id = value
-        return self
-
     def with_channel_id(self, value: ChannelID) -> Self:
         """Set the channel_id."""
         self.channel_id = value
@@ -178,6 +173,7 @@ class ActivityInput(_ActivityBase):
                 stacklevel=2,
             )
         return self
+
 
     def with_service_url(self, value: str) -> Self:
         """Set the service_url."""
