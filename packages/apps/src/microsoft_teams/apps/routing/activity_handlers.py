@@ -4,7 +4,6 @@ Licensed under the MIT License.
 """
 
 from abc import ABC, abstractmethod
-from logging import Logger
 from typing import Any, Awaitable, Callable, Dict, Optional, Pattern, Union, cast, overload
 
 from microsoft_teams.api import (
@@ -31,12 +30,6 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
     @abstractmethod
     def router(self) -> ActivityRouter:
         """The activity router instance. Must be implemented by the concrete class."""
-        pass
-
-    @property
-    @abstractmethod
-    def logger(self) -> Logger:
-        """The logger instance used by the app."""
         pass
 
     @overload
@@ -108,7 +101,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
         def decorator(
             func: Callable[[ActivityContext[MessageActivity]], Awaitable[None]],
         ) -> Callable[[ActivityContext[MessageActivity]], Awaitable[None]]:
-            validate_handler_type(self.logger, func, MessageActivity, "on_message", "MessageActivity")
+            validate_handler_type(func, MessageActivity, "on_message", "MessageActivity")
 
             def selector(ctx: ActivityBase) -> bool:
                 if not isinstance(ctx, MessageActivity):
@@ -235,9 +228,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
         def decorator(
             func: InvokeHandler[TaskFetchInvokeActivity, TaskModuleInvokeResponse],
         ) -> InvokeHandler[TaskFetchInvokeActivity, TaskModuleInvokeResponse]:
-            validate_handler_type(
-                self.logger, func, TaskFetchInvokeActivity, "on_dialog_open", "TaskFetchInvokeActivity"
-            )
+            validate_handler_type(func, TaskFetchInvokeActivity, "on_dialog_open", "TaskFetchInvokeActivity")
 
             def selector(ctx: ActivityBase) -> bool:
                 if not isinstance(ctx, TaskFetchInvokeActivity):
@@ -252,9 +243,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = cast(Dict[str, Any], data)
                 dialog_id = data.get("dialog_id")
                 if dialog_id is not None and not isinstance(dialog_id, str):
-                    self.logger.warning(
-                        f"Expected 'dialog_id' to be a string, got {type(dialog_id).__name__}: {dialog_id}"
-                    )
+                    print(f"Expected 'dialog_id' to be a string, got {type(dialog_id).__name__}: {dialog_id}")
                     return False
                 return dialog_id == dialog_id_or_handler
 
@@ -374,9 +363,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
         def decorator(
             func: InvokeHandler[TaskSubmitInvokeActivity, TaskModuleInvokeResponse],
         ) -> InvokeHandler[TaskSubmitInvokeActivity, TaskModuleInvokeResponse]:
-            validate_handler_type(
-                self.logger, func, TaskSubmitInvokeActivity, "on_dialog_submit", "TaskSubmitInvokeActivity"
-            )
+            validate_handler_type(func, TaskSubmitInvokeActivity, "on_dialog_submit", "TaskSubmitInvokeActivity")
 
             def selector(ctx: ActivityBase) -> bool:
                 if not isinstance(ctx, TaskSubmitInvokeActivity):
@@ -391,7 +378,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = cast(Dict[str, Any], data)
                 action = data.get("action")
                 if action is not None and not isinstance(action, str):
-                    self.logger.warning(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
+                    print(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
                     return False
                 return action == action_or_handler
 
@@ -528,7 +515,6 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
             func: InvokeHandler[AdaptiveCardInvokeActivity, AdaptiveCardInvokeResponse],
         ) -> InvokeHandler[AdaptiveCardInvokeActivity, AdaptiveCardInvokeResponse]:
             validate_handler_type(
-                self.logger,
                 func,
                 AdaptiveCardInvokeActivity,
                 "on_card_action_execute",
@@ -556,7 +542,7 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = ctx.value.action.data
                 action = data.get("action")
                 if action is not None and not isinstance(action, str):
-                    self.logger.warning(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
+                    print(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
                     return False
 
                 return action == action_or_handler

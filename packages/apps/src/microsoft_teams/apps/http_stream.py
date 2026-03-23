@@ -4,8 +4,8 @@ Licensed under the MIT License.
 """
 
 import asyncio
+import logging
 from collections import deque
-from logging import Logger
 from typing import Awaitable, Callable, List, Optional, Union
 
 from microsoft_teams.api import (
@@ -18,10 +18,12 @@ from microsoft_teams.api import (
     SentActivity,
     TypingActivityInput,
 )
-from microsoft_teams.common import ConsoleLogger, EventEmitter
+from microsoft_teams.common import EventEmitter
 
 from .plugins.streamer import StreamerEvent, StreamerProtocol
-from .utils import RetryOptions, Timeout, retry
+from .utils import RetryOptions, retry
+
+logger = logging.getLogger(__name__)
 
 
 class HttpStream(StreamerProtocol):
@@ -29,40 +31,36 @@ class HttpStream(StreamerProtocol):
     HTTP-based streaming implementation for Microsoft Teams activities.
 
     Flow:
-    1. emit() adds activities to a queue and cancels any pending flush timeout
-    2. emit() schedules _flush() to run after 0.5 seconds via Timeout
-    3. If another emit() happens before flush executes, the timeout is cancelled and rescheduled
-    4. _flush() starts by cancelling any pending timeout, then processes up to 10 queued activities under a lock
-    5. _flush() combines text from MessageActivity and sends it as a Typing activity with streamType='streaming'
-    6. _flush() schedules another flush if more items remain in queue
-    7. close() waits for queue to empty, then sends final message with stream_type='stream_final'
+    1. emit() adds activities to a queue
+    2. _flush() processes up to 10 queued items under a lock.
+    3. Informative typing updates are sent immediately if no message started.
+    4. Message text are combined into a typing chunk.
+    5. Another flush is scheduled if more items remain.
+    6. close() waits for queue to empty, then sends final message with stream_type='stream_final'
 
     The timeout cancellation ensures only one flush operation is scheduled at a time.
     The delays between flushes is to ensure we dont hit API rate limits with Microsoft Teams.
     """
 
-    def __init__(self, client: ApiClient, ref: ConversationReference, logger: Optional[Logger] = None):
+    def __init__(self, client: ApiClient, ref: ConversationReference):
         """
         Initialize a new HttpStream instance.
 
         Args:
             client (ApiClient): The API client used to send activities to Microsoft Teams.
             ref (ConversationReference): Reference to the Teams conversation.
-            logger (Optional[Logger]): Custom logger instance for debugging and monitoring..
         """
         super().__init__()
         self._client = client
         self._ref = ref
-        self._logger = (
-            logger.getChild("@teams/http-stream") if logger else ConsoleLogger().create_logger("@teams/http-stream")
-        )
         self._events = EventEmitter[StreamerEvent]()
 
         self._result: Optional[SentActivity] = None
         self._lock = asyncio.Lock()
-        self._timeout: Optional[Timeout] = None
-        self._id_set_event = asyncio.Event()
-        self._queue_empty_event = asyncio.Event()
+        self._timeout: Optional[asyncio.TimerHandle] = None
+        self._pending: Optional[asyncio.Task[None]] = None
+        self._total_wait_timeout: float = 30.0
+        self._state_changed = asyncio.Event()
 
         self._reset_state()
 
@@ -104,18 +102,14 @@ class HttpStream(StreamerProtocol):
         Args:
             activity: The activity to emit.
         """
-        if self._timeout is not None:
-            self._timeout.cancel()
-            self._timeout = None
 
         if isinstance(activity, str):
             activity = MessageActivityInput(text=activity, type="message")
         self._queue.append(activity)
 
-        # Clear the queue empty event since we just added an item
-        self._queue_empty_event.clear()
-
-        self._timeout = Timeout(0.5, self._flush)
+        if not self._pending and not self._timeout:
+            # Schedule a flush immediately when no timeout is set (first emit)
+            self._pending = asyncio.create_task(self._flush())
 
     def update(self, text: str) -> None:
         """
@@ -126,27 +120,38 @@ class HttpStream(StreamerProtocol):
         """
         self.emit(TypingActivityInput().with_text(text).with_channel_data(ChannelData(stream_type="informative")))
 
+    async def _wait_for_id_and_queue(self):
+        """Wait until _id is set and the queue is empty, with a total timeout."""
+
+        async def _poll():
+            while self._queue or not self._id:
+                await self._state_changed.wait()
+                self._state_changed.clear()
+
+        try:
+            await asyncio.wait_for(_poll(), timeout=self._total_wait_timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
     async def close(self) -> Optional[SentActivity]:
         # wait for lock to be free
         if self._result is not None:
-            self._logger.debug("stream already closed with result")
+            logger.debug("stream already closed with result")
             return self._result
 
         if self._index == 1 and not self._queue and not self._lock.locked():
-            self._logger.debug("stream has no content to send, returning None")
+            logger.debug("stream has no content to send, returning None")
             return None
 
         # Wait until _id is set and queue is empty
-        if not self._id:
-            self._logger.debug("waiting for ID to be set")
-            await self._id_set_event.wait()
-
-        while self._queue:
-            self._logger.debug("waiting for queue to be empty...")
-            await self._queue_empty_event.wait()
+        result = await self._wait_for_id_and_queue()
+        if not result:
+            logger.warning("Timeout while waiting for _id to be set and queue to be empty, cannot close stream")
+            return None
 
         if self._text == "" and self._attachments == []:
-            self._logger.warning("no text or attachments to send, cannot close stream")
+            logger.warning("no text or attachments to send, cannot close stream")
             return None
 
         # Build final message
@@ -154,7 +159,7 @@ class HttpStream(StreamerProtocol):
         activity = MessageActivityInput(text=self._text).with_id(self._id).with_channel_data(self._channel_data)
         activity.add_attachments(*self._attachments).add_entities(*self._entities).add_stream_final()
 
-        res = await retry(lambda: self._send(activity), options=RetryOptions(logger=self._logger))
+        res = await retry(lambda: self._send(activity), options=RetryOptions())
 
         # Emit close event
         self._events.emit("close", res)
@@ -162,7 +167,7 @@ class HttpStream(StreamerProtocol):
         # Reset state
         self._reset_state()
         self._result = res
-        self._logger.debug("stream closed with result: %s", res)
+        logger.debug("stream closed with result: %s", res)
 
         return res
 
@@ -171,10 +176,14 @@ class HttpStream(StreamerProtocol):
         Flush the current activity queue.
         """
         # If there are no items in the queue, nothing to flush
-        async with self._lock:
+        if self._lock.locked():
+            return
+
+        await self._lock.acquire()
+
+        try:
             if not self._queue:
                 return
-
             if self._timeout is not None:
                 self._timeout.cancel()
                 self._timeout = None
@@ -204,7 +213,7 @@ class HttpStream(StreamerProtocol):
                 i += 1
 
             if i == 0:
-                self._logger.debug("No activities to flush")
+                logger.debug("No activities to flush")
                 return
 
             # Send informative updates immediately
@@ -216,13 +225,17 @@ class HttpStream(StreamerProtocol):
                 to_send = TypingActivityInput(text=self._text)
                 await self._send_activity(to_send)
 
-            # Signal if queue is now empty
-            if not self._queue:
-                self._queue_empty_event.set()
-
             # If more queued, schedule another flush
             if self._queue and not self._timeout:
-                self._timeout = Timeout(0.5, self._flush)
+                self._timeout = asyncio.get_running_loop().call_later(0.5, lambda: asyncio.create_task(self._flush()))
+
+            # Notify that queue state has changed
+            self._state_changed.set()
+
+        finally:
+            # Reset flushing flag so future emits can trigger another flush
+            self._pending = None
+            self._lock.release()
 
     async def _send_activity(self, to_send: TypingActivityInput):
         """
@@ -235,13 +248,15 @@ class HttpStream(StreamerProtocol):
             to_send = to_send.with_id(self._id)
         to_send = to_send.add_stream_update(self._index)
 
-        res = await retry(lambda: self._send(to_send), options=RetryOptions(logger=self._logger))
+        res = await retry(
+            lambda: self._send(to_send),
+            options=RetryOptions(max_delay=4.0, jitter_type="none", max_attempts=8),
+        )
         self._events.emit("chunk", res)
         self._index += 1
         if self._id is None:
             self._id = res.id
-            # Signal that ID has been set
-            self._id_set_event.set()
+            self._state_changed.set()  # Notify that _id has been set
 
     async def _send(self, to_send: Union[TypingActivityInput, MessageActivityInput]) -> SentActivity:
         """

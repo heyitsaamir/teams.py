@@ -31,6 +31,13 @@ class Account(CustomBaseModel):
     """
     Additional properties for the account.
     """
+    is_targeted: Optional[bool] = None
+    """Indicates targeted-message routing for this recipient.
+
+    .. warning:: Preview
+        This field is in preview and may change in the future.
+        Diagnostic: ExperimentalTeamsTargeted
+    """
     name: Optional[str] = None
     """
     The name of the account.
@@ -52,7 +59,7 @@ class TeamsChannelAccount(CustomBaseModel):
     """
     Display-friendly name of the user or bot.
     """
-    object_id: Optional[str] = None
+    aad_object_id: Optional[str] = None
     """
     The user's Object ID in Azure Active Directory (AAD).
     """
