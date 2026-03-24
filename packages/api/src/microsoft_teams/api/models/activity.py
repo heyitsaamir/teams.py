@@ -328,6 +328,14 @@ class Activity(_ActivityBase):
     recipient: Account
     """Identifies the recipient of the message."""
 
+    is_targeted: Optional[bool] = None
+    """Indicates if this is a targeted message visible only to a specific recipient.
+
+    .. warning:: Preview
+        This field is in preview and may change in the future.
+        Diagnostic: ExperimentalTeamsTargeted
+    """
+
     @property
     def channel(self) -> Optional[ChannelInfo]:
         """Information about the channel in which the message was sent."""

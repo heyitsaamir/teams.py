@@ -806,3 +806,63 @@ class TestMessageActivityIntegration:
         assert activity.is_targeted is True
         assert activity.recipient is not None
         assert activity.recipient.id == "user-123"
+
+
+class TestMessageActivityIsTargeted:
+    """Tests for is_targeted field on incoming MessageActivity (issue #320)."""
+
+    def test_message_activity_has_is_targeted_field(self):
+        """Verify MessageActivity (incoming) supports the is_targeted field."""
+        activity = MessageActivity(
+            id="test-1",
+            type="message",
+            text="Hello",
+            from_=Account(id="user-123", name="Test User"),
+            conversation=ConversationAccount(id="conv-123"),
+            recipient=Account(id="bot-123", name="Bot"),
+            is_targeted=True,
+        )
+        assert activity.is_targeted is True
+
+    def test_message_activity_is_targeted_defaults_to_none(self):
+        """Verify is_targeted defaults to None when not provided."""
+        activity = MessageActivity(
+            id="test-1",
+            type="message",
+            text="Hello",
+            from_=Account(id="user-123", name="Test User"),
+            conversation=ConversationAccount(id="conv-123"),
+            recipient=Account(id="bot-123", name="Bot"),
+        )
+        assert activity.is_targeted is None
+
+    def test_message_activity_is_targeted_round_trip(self):
+        """Verify is_targeted survives model_dump/model_validate round-trip."""
+        activity = MessageActivity(
+            id="test-1",
+            type="message",
+            text="Hello",
+            from_=Account(id="user-123", name="Test User"),
+            conversation=ConversationAccount(id="conv-123"),
+            recipient=Account(id="bot-123", name="Bot"),
+            is_targeted=True,
+        )
+        dumped = activity.model_dump(by_alias=True, exclude_none=True)
+        assert dumped["isTargeted"] is True
+
+        restored = MessageActivity.model_validate(dumped)
+        assert restored.is_targeted is True
+
+    def test_message_activity_deserialize_with_is_targeted(self):
+        """Verify MessageActivity can deserialize JSON payload containing isTargeted."""
+        payload = {
+            "id": "test-1",
+            "type": "message",
+            "text": "Hello",
+            "from": {"id": "user-123", "name": "Test User"},
+            "conversation": {"id": "conv-123"},
+            "recipient": {"id": "bot-123", "name": "Bot"},
+            "isTargeted": True,
+        }
+        activity = MessageActivity.model_validate(payload)
+        assert activity.is_targeted is True
