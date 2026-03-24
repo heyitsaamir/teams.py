@@ -243,7 +243,6 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = cast(Dict[str, Any], data)
                 dialog_id = data.get("dialog_id")
                 if dialog_id is not None and not isinstance(dialog_id, str):
-                    print(f"Expected 'dialog_id' to be a string, got {type(dialog_id).__name__}: {dialog_id}")
                     return False
                 return dialog_id == dialog_id_or_handler
 
@@ -378,7 +377,6 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = cast(Dict[str, Any], data)
                 action = data.get("action")
                 if action is not None and not isinstance(action, str):
-                    print(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
                     return False
                 return action == action_or_handler
 
@@ -542,7 +540,6 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                 data = ctx.value.action.data
                 action = data.get("action")
                 if action is not None and not isinstance(action, str):
-                    print(f"Expected 'action' to be a string, got {type(action).__name__}: {action}")
                     return False
 
                 return action == action_or_handler

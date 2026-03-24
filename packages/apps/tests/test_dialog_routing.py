@@ -29,20 +29,14 @@ class TestDialogRouting:
     """Test cases for dialog routing functionality."""
 
     @pytest.fixture
-    def mock_logger(self):
-        """Create a mock logger."""
-        return MagicMock()
-
-    @pytest.fixture
     def mock_storage(self):
         """Create a mock storage."""
         return MagicMock()
 
     @pytest.fixture(scope="function")
-    def app_with_options(self, mock_logger, mock_storage):
+    def app_with_options(self, mock_storage):
         """Create an app with basic options."""
         return App(
-            logger=mock_logger,
             storage=mock_storage,
             client_id="test-client-id",
             client_secret="test-secret",
