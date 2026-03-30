@@ -14,15 +14,17 @@ class EnhancedSubmitActionData(BaseSubmitActionData):
     """
     Utility class for creating submit action data with action-based routing.
 
-    This class extends the base SubmitActionData with a convenience constructor that
-    accepts an action identifier for routing submissions to specific handlers.
+    This class extends the base ``SubmitActionData`` (``microsoft_teams.cards.core.SubmitActionData``)
+    with a convenience constructor that accepts an ``action`` identifier, which is used by
+    ``@app.on_dialog_submit("action")`` for routing. The base class is a plain data container
+    with no routing support.
 
     Args:
         action: The action identifier that determines which handler processes the submission.
         data: Optional additional data to include with the submission.
 
     Example:
-        >>> submit_data = SubmitActionData(action="submit_user_form", data={"user_id": "123"})
+        >>> submit_data = EnhancedSubmitActionData(action="submit_user_form", data={"user_id": "123"})
         >>> submit_action = SubmitAction(title="Submit").with_data(submit_data)
     """
 

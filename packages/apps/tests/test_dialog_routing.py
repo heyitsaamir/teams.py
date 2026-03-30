@@ -430,6 +430,39 @@ class TestDialogRouting:
         assert len(handlers) == 1
         assert handlers[0] == handle_dialog
 
+    def test_on_dialog_open_global_and_specific_both_fire(self, app_with_options: App) -> None:
+        """Both global and specific handlers fire when an activity matches the specific dialog_id.
+        Handlers run in registration order."""
+
+        @app_with_options.on_dialog_open()
+        async def handle_all(ctx: ActivityContext[TaskFetchInvokeActivity]) -> TaskModuleResponse:
+            return TaskModuleResponse(task=TaskModuleMessageResponse(value="global"))
+
+        @app_with_options.on_dialog_open("my_form")
+        async def handle_my_form(ctx: ActivityContext[TaskFetchInvokeActivity]) -> TaskModuleResponse:
+            return TaskModuleResponse(task=TaskModuleMessageResponse(value="specific"))
+
+        from_account = Account(id="user-123", name="Test User", role="user")
+        recipient = Account(id="bot-456", name="Test Bot", role="bot")
+        conversation = ConversationAccount(id="conv-789", conversation_type="personal")
+
+        # Activity matching the specific dialog_id — both handlers should fire
+        matching_activity = TaskFetchInvokeActivity(
+            id="test-activity-id",
+            type="invoke",
+            name="task/fetch",
+            from_=from_account,
+            recipient=recipient,
+            conversation=conversation,
+            channel_id="msteams",
+            value=TaskModuleRequest(data={"dialog_id": "my_form"}),
+        )
+
+        handlers = app_with_options.router.select_handlers(matching_activity)
+        assert len(handlers) == 2
+        assert handlers[0] == handle_all  # global registered first
+        assert handlers[1] == handle_my_form
+
     def test_on_dialog_open_returns_wrapped_response(self, app_with_options: App) -> None:
         """Test that handlers can also return InvokeResponse[TaskModuleResponse] (wrapped)."""
 

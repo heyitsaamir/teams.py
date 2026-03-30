@@ -537,6 +537,8 @@ class ActivityHandlerMixin(GeneratedActivityHandlerMixin, ABC):
                     return False
 
                 # Extract and match action field
+                if ctx.value.action.type != "Action.Execute":
+                    return False
                 data = ctx.value.action.data
                 action = data.get("action")
                 if action is not None and not isinstance(action, str):
