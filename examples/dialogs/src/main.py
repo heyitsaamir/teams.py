@@ -48,20 +48,19 @@ async def handle_message(ctx: ActivityContext[MessageActivity]) -> None:
     """Handle message activities and show dialog launcher card."""
 
     # Create the launcher adaptive card using Python objects to demonstrate SubmitActionData
-    # This tests that ms_teams correctly serializes to 'msteams'
     card = AdaptiveCard(version="1.4")
     card.body = [TextBlock(text="Select the examples you want to see!", size="Large", weight="Bolder")]
 
-    # Use SubmitActionData with ms_teams to test serialization
+    # Use SubmitActionData with msteams to set task/fetch behavior
     # SubmitActionData uses extra="allow" to accept custom fields
     simple_form_data = SubmitActionData.model_validate({"opendialogtype": "simple_form"})
-    simple_form_data.ms_teams = TaskFetchSubmitActionData().model_dump()
+    simple_form_data.msteams = TaskFetchSubmitActionData().model_dump()
 
     webpage_data = SubmitActionData.model_validate({"opendialogtype": "webpage_dialog"})
-    webpage_data.ms_teams = TaskFetchSubmitActionData().model_dump()
+    webpage_data.msteams = TaskFetchSubmitActionData().model_dump()
 
     multistep_data = SubmitActionData.model_validate({"opendialogtype": "multi_step_form"})
-    multistep_data.ms_teams = TaskFetchSubmitActionData().model_dump()
+    multistep_data.msteams = TaskFetchSubmitActionData().model_dump()
 
     card.actions = [
         SubmitAction(title="Simple form test").with_data(simple_form_data),
