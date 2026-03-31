@@ -197,7 +197,7 @@ def build_analysis_card(issue: dict, analysis: dict) -> AdaptiveCard:
             ),
             # AI Summary
             Container(
-                style="Emphasis",
+                style="emphasis",
                 items=[
                     TextBlock(
                         text=analysis.get("summary", "No summary available."),
