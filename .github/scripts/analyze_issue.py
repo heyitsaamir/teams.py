@@ -5,7 +5,7 @@ Licensed under the MIT License.
 
 # GitHub Issue Analysis → Teams Notification
 # Analyzes newly opened GitHub issues using the GitHub Models API (GPT-4o)
-# and sends a rich Adaptive Card summary to a Microsoft Teams channel.
+# and sends a markdown summary to a Microsoft Teams channel.
 
 import asyncio
 import json
@@ -14,26 +14,7 @@ import sys
 import urllib.request
 
 from microsoft_teams.apps import App
-from microsoft_teams.cards import (
-    ActionSet,
-    AdaptiveCard,
-    Column,
-    ColumnSet,
-    Container,
-    Fact,
-    FactSet,
-    OpenUrlAction,
-    TextBlock,
-)
 from openai import OpenAI
-
-SEVERITY_COLORS = {
-    "critical": "Attention",
-    "high": "Attention",
-    "medium": "Warning",
-    "low": "Good",
-    "info": "Good",
-}
 
 SYSTEM_PROMPT = """\
 You are a GitHub issue triage assistant for the Microsoft Teams Python SDK.
@@ -141,90 +122,35 @@ def analyze_issue(issue: dict) -> dict:
     return json.loads(content)
 
 
-def build_analysis_card(issue: dict, analysis: dict) -> AdaptiveCard:
-    """Build an Adaptive Card with the issue analysis."""
-    repo = os.environ.get("GITHUB_REPOSITORY", "microsoft/teams.py")
-    severity = analysis.get("severity", "info")
-    severity_color = SEVERITY_COLORS.get(severity, "Default")
+def _to_str(value: object) -> str:
+    """Coerce a value to string (handles lists from AI responses)."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
-    return AdaptiveCard(
-        version="1.5",
-        body=[
-            # Header
-            TextBlock(
-                text=f"{repo}#{issue['number']}: {issue['title']}",
-                size="Medium",
-                weight="Bolder",
-                wrap=True,
-            ),
-            # Metadata columns: category | severity | author
-            ColumnSet(
-                columns=[
-                    Column(
-                        width="auto",
-                        items=[
-                            TextBlock(
-                                text=analysis.get("category", "unknown").upper(),
-                                weight="Bolder",
-                                is_subtle=True,
-                                size="Small",
-                            ),
-                        ],
-                    ),
-                    Column(
-                        width="auto",
-                        items=[
-                            TextBlock(
-                                text=severity.upper(),
-                                color=severity_color,
-                                weight="Bolder",
-                                size="Small",
-                            ),
-                        ],
-                    ),
-                    Column(
-                        width="stretch",
-                        items=[
-                            TextBlock(
-                                text=f"by @{issue['author']}",
-                                is_subtle=True,
-                                size="Small",
-                                horizontal_alignment="Right",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            # AI Summary
-            Container(
-                style="emphasis",
-                items=[
-                    TextBlock(
-                        text=analysis.get("summary", "No summary available."),
-                        wrap=True,
-                    ),
-                ],
-            ),
-            # Details
-            FactSet(
-                facts=[
-                    Fact(title="Packages", value=", ".join(analysis.get("affected_packages", [])) or "N/A"),
-                    Fact(title="Labels", value=", ".join(analysis.get("suggested_labels", [])) or "N/A"),
-                    Fact(title="Details", value=analysis.get("key_details", "N/A")),
-                ],
-            ),
-            # Action
-            ActionSet(
-                actions=[
-                    OpenUrlAction(title="View Issue", url=issue["html_url"]),
-                ],
-            ),
-        ],
+
+def build_message(issue: dict, analysis: dict) -> str:
+    """Build a markdown message with the issue analysis."""
+    repo = os.environ.get("GITHUB_UPSTREAM_REPO") or os.environ.get("GITHUB_REPOSITORY", "microsoft/teams.py")
+    category = analysis.get("category", "unknown")
+    severity = analysis.get("severity", "info")
+    summary = analysis.get("summary", "No summary available.")
+    packages = ", ".join(analysis.get("affected_packages", [])) or "N/A"
+    labels = ", ".join(analysis.get("suggested_labels", [])) or "N/A"
+    details = _to_str(analysis.get("key_details", "N/A"))
+
+    return (
+        f"**[{repo}#{issue['number']}]({issue['html_url']}): {issue['title']}**\n\n"
+        f"**Category:** {category} · **Severity:** {severity} · **Author:** @{issue['author']}\n\n"
+        f"{summary}\n\n"
+        f"**Packages:** {packages}\n"
+        f"**Suggested labels:** {labels}\n"
+        f"**Details:** {details}"
     )
 
 
-async def send_to_teams(card: AdaptiveCard) -> None:
-    """Send the card to Teams via proactive messaging."""
+async def send_to_teams(message: str) -> None:
+    """Send the message to Teams via proactive messaging."""
     conversation_id = os.environ.get("TEAMS_CONVERSATION_ID")
     if not conversation_id:
         print("ERROR: TEAMS_CONVERSATION_ID not set")
@@ -232,8 +158,8 @@ async def send_to_teams(card: AdaptiveCard) -> None:
 
     app = App()
     await app.initialize()
-    result = await app.send(conversation_id, card)
-    print(f"Card sent to Teams. Activity ID: {result.id}")
+    result = await app.send(conversation_id, message)
+    print(f"Message sent to Teams. Activity ID: {result.id}")
 
 
 async def main() -> None:
@@ -245,11 +171,11 @@ async def main() -> None:
     analysis = analyze_issue(issue)
     print(f"Analysis: category={analysis.get('category')}, severity={analysis.get('severity')}")
 
-    print("Building Adaptive Card...")
-    card = build_analysis_card(issue, analysis)
+    print("Building message...")
+    message = build_message(issue, analysis)
 
     print("Sending to Teams...")
-    await send_to_teams(card)
+    await send_to_teams(message)
 
     print("Done!")
 

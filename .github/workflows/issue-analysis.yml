@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python openai microsoft-teams-apps microsoft-teams-cards
+          uv pip install --python .venv/bin/python openai microsoft-teams-apps
 
       - name: Analyze issue and notify Teams
         env:
