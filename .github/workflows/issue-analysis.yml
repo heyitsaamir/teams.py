@@ -49,13 +49,32 @@ jobs:
       - name: Install Copilot CLI
         run: npm install -g @github/copilot
 
-      - name: Resolve issue number
+      - name: Resolve issue details
         id: issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ inputs.issue_number }}" ]; then
-            echo "number=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Fetch issue from API
+            ISSUE=$(gh api repos/microsoft/teams.py/issues/${{ inputs.issue_number }})
+            echo "number=$(echo "$ISSUE" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+            echo "title=$(echo "$ISSUE" | jq -r '.title')" >> "$GITHUB_OUTPUT"
+            echo "author=$(echo "$ISSUE" | jq -r '.user.login')" >> "$GITHUB_OUTPUT"
+            echo "html_url=$(echo "$ISSUE" | jq -r '.html_url')" >> "$GITHUB_OUTPUT"
+            echo "labels=$(echo "$ISSUE" | jq -r '[.labels[].name] | join(",")')" >> "$GITHUB_OUTPUT"
+            # Body can be multiline — use a delimiter
+            echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
+            echo "$ISSUE" | jq -r '.body // ""' >> "$GITHUB_OUTPUT"
+            echo "BODY_EOF" >> "$GITHUB_OUTPUT"
           else
             echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            echo "title=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"
+            echo "author=${{ github.event.issue.user.login }}" >> "$GITHUB_OUTPUT"
+            echo "html_url=${{ github.event.issue.html_url }}" >> "$GITHUB_OUTPUT"
+            echo "labels=$(echo '${{ toJSON(github.event.issue.labels) }}' | jq -r '[.[].name] | join(",")')" >> "$GITHUB_OUTPUT"
+            echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
+            echo "${{ github.event.issue.body }}" >> "$GITHUB_OUTPUT"
+            echo "BODY_EOF" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Analyze issue with Copilot CLI
@@ -112,7 +131,12 @@ jobs:
           TENANT_ID: ${{ secrets.TEAMS_TENANT_ID }}
           TEAMS_CONVERSATION_ID: ${{ secrets.TEAMS_CONVERSATION_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           GITHUB_UPSTREAM_REPO: microsoft/teams.py
           COPILOT_ANALYSIS_FILE: /tmp/analysis.txt
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_AUTHOR: ${{ steps.issue.outputs.author }}
+          ISSUE_HTML_URL: ${{ steps.issue.outputs.html_url }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
         run: .venv/bin/python .github/scripts/analyze_issue.py

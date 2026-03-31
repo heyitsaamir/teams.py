@@ -11,7 +11,6 @@ import asyncio
 import json
 import os
 import sys
-import urllib.request
 
 from microsoft_teams.apps import App
 from microsoft_teams.cards import (
@@ -62,50 +61,22 @@ SEVERITY_COLORS: dict[str, str] = {
 }
 
 
-def _parse_issue(issue: dict) -> dict:
-    """Extract fields from a GitHub issue object."""
+def load_issue_from_env() -> dict:
+    """Read issue details from environment variables set by the workflow."""
+    number = os.environ.get("ISSUE_NUMBER")
+    if not number:
+        print("ERROR: ISSUE_NUMBER not set")
+        sys.exit(1)
+
+    labels_str = os.environ.get("ISSUE_LABELS", "")
     return {
-        "title": issue.get("title", ""),
-        "body": issue.get("body", "") or "",
-        "labels": [label.get("name", "") for label in issue.get("labels", [])],
-        "author": issue.get("user", {}).get("login", "unknown"),
-        "number": issue.get("number", 0),
-        "html_url": issue.get("html_url", ""),
+        "number": int(number),
+        "title": os.environ.get("ISSUE_TITLE", ""),
+        "body": os.environ.get("ISSUE_BODY", "") or "",
+        "author": os.environ.get("ISSUE_AUTHOR", "unknown"),
+        "html_url": os.environ.get("ISSUE_HTML_URL", ""),
+        "labels": [label.strip() for label in labels_str.split(",") if label.strip()],
     }
-
-
-def load_issue_from_event() -> dict:
-    """Read issue data from the event payload, or fetch by number for manual triggers."""
-    issue_number = os.environ.get("ISSUE_NUMBER")
-    if issue_number:
-        return fetch_issue(int(issue_number))
-
-    event_path = os.environ.get("GITHUB_EVENT_PATH")
-    if not event_path:
-        print("ERROR: GITHUB_EVENT_PATH not set and ISSUE_NUMBER not provided")
-        sys.exit(1)
-
-    with open(event_path) as f:
-        event = json.load(f)
-
-    return _parse_issue(event.get("issue", {}))
-
-
-def fetch_issue(issue_number: int) -> dict:
-    """Fetch an issue from the GitHub API by number."""
-    repo = os.environ.get("GITHUB_UPSTREAM_REPO") or os.environ.get("GITHUB_REPOSITORY", "")
-    token = os.environ.get("GITHUB_TOKEN", "")
-    if not repo:
-        print("ERROR: GITHUB_REPOSITORY not set")
-        sys.exit(1)
-
-    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}"
-    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        issue = json.loads(resp.read().decode())
-
-    return _parse_issue(issue)
 
 
 def _call_model(system_prompt: str, user_message: str) -> str:
@@ -240,8 +211,8 @@ def build_triage_card(issue: dict, triage: dict) -> AdaptiveCard:
 
 
 async def main() -> None:
-    print("Loading issue from event payload...")
-    issue = load_issue_from_event()
+    print("Loading issue from environment...")
+    issue = load_issue_from_env()
     print(f"Issue #{issue['number']}: {issue['title']}")
 
     print("Triaging issue...")
