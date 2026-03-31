@@ -5,7 +5,7 @@ Licensed under the MIT License.
 
 # GitHub Issue Analysis → Teams Notification
 # Analyzes newly opened GitHub issues using the GitHub Models API (GPT-4o)
-# and sends a markdown summary to a Microsoft Teams channel.
+# and sends a summary card + action plan to a Microsoft Teams channel.
 
 import asyncio
 import json
@@ -14,9 +14,20 @@ import sys
 import urllib.request
 
 from microsoft_teams.apps import App
+from microsoft_teams.cards import (
+    ActionSet,
+    AdaptiveCard,
+    Column,
+    ColumnSet,
+    Container,
+    Fact,
+    FactSet,
+    OpenUrlAction,
+    TextBlock,
+)
 from openai import OpenAI
 
-SYSTEM_PROMPT = """\
+TRIAGE_PROMPT = """\
 You are a GitHub issue triage assistant for the Microsoft Teams Python SDK.
 
 The SDK is a UV workspace with these packages:
@@ -38,10 +49,44 @@ Analyze the issue and respond with ONLY valid JSON (no markdown fencing):
   "severity": "critical | high | medium | low | info",
   "summary": "1-2 sentence plain-text summary of the issue",
   "affected_packages": ["list", "of", "affected", "packages"],
-  "suggested_labels": ["list", "of", "suggested", "labels"],
-  "key_details": "Brief bullet points of key technical details (plain text)"
+  "suggested_labels": ["list", "of", "suggested", "labels"]
 }\
 """
+
+ANALYSIS_PROMPT = """\
+You are a senior developer on the Microsoft Teams Python SDK. An issue has been filed and triaged.
+
+The SDK is a UV workspace (packages/ directory) with this structure:
+- packages/api/src/microsoft_teams/api/ — Core API clients (BaseClient), models (Activity, Conversation, Account), auth
+- packages/apps/src/microsoft_teams/apps/ — App orchestrator, plugins, routing, events, HttpServer
+- packages/common/src/microsoft_teams/common/ — HTTP client abstraction, logging, storage
+- packages/cards/src/microsoft_teams/cards/ — Adaptive cards
+- packages/ai/src/microsoft_teams/ai/ — AI/function calling utilities
+- packages/botbuilder/src/microsoft_teams/botbuilder/ — Bot Framework integration plugin
+- packages/devtools/src/microsoft_teams/devtools/ — Development tools plugin
+
+Key patterns:
+- Pydantic models with camelCase aliases (ConfigDict(alias_generator=to_camel))
+- Protocol classes for interfaces (not ABCs)
+- Concrete clients inherit from BaseClient with operation class composition
+- async/await for all API calls
+
+Given the issue and its triage, provide a concrete action plan in markdown. Include:
+1. **Root cause** — What's likely going wrong or what's missing
+2. **Files to investigate** — Specific paths in the packages/ directory to look at
+3. **Proposed approach** — Step-by-step what a developer should do to resolve this
+4. **Estimated complexity** — Small (< 1 day), Medium (1-3 days), or Large (3+ days)
+
+Be specific and actionable. Reference actual package paths and patterns.\
+"""
+
+SEVERITY_COLORS: dict[str, str] = {
+    "critical": "Attention",
+    "high": "Attention",
+    "medium": "Warning",
+    "low": "Good",
+    "info": "Default",
+}
 
 
 def _parse_issue(issue: dict) -> dict:
@@ -90,8 +135,8 @@ def fetch_issue(issue_number: int) -> dict:
     return _parse_issue(issue)
 
 
-def analyze_issue(issue: dict) -> dict:
-    """Call GitHub Models API to analyze the issue."""
+def _call_model(system_prompt: str, user_message: str) -> str:
+    """Call GitHub Models API and return the response content."""
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         print("ERROR: GITHUB_TOKEN not set")
@@ -102,64 +147,133 @@ def analyze_issue(issue: dict) -> dict:
         api_key=token,
     )
 
-    user_message = (
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=0.2,
+    )
+
+    return response.choices[0].message.content or ""
+
+
+def _issue_as_user_message(issue: dict) -> str:
+    """Format issue data as a user message for the model."""
+    return (
         f"Issue #{issue['number']}: {issue['title']}\n\n"
         f"Author: {issue['author']}\n"
         f"Labels: {', '.join(issue['labels']) or 'none'}\n\n"
         f"Body:\n{issue['body'][:3000]}"
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.2,
-    )
 
-    content = response.choices[0].message.content or "{}"
+def triage_issue(issue: dict) -> dict:
+    """Triage the issue: category, severity, summary, etc."""
+    content = _call_model(TRIAGE_PROMPT, _issue_as_user_message(issue))
     return json.loads(content)
 
 
-def _to_str(value: object) -> str:
-    """Coerce a value to string (handles lists from AI responses)."""
-    if isinstance(value, list):
-        return ", ".join(str(v) for v in value)
-    return str(value)
+def analyze_issue(issue: dict, triage: dict) -> str:
+    """Generate a detailed action plan for the issue."""
+    user_message = (
+        f"{_issue_as_user_message(issue)}\n\n"
+        f"---\nTriage result:\n"
+        f"Category: {triage.get('category')}\n"
+        f"Severity: {triage.get('severity')}\n"
+        f"Summary: {triage.get('summary')}\n"
+        f"Affected packages: {', '.join(triage.get('affected_packages', []))}"
+    )
+    return _call_model(ANALYSIS_PROMPT, user_message)
 
 
-def build_message(issue: dict, analysis: dict) -> str:
-    """Build a markdown message with the issue analysis."""
+def build_triage_card(issue: dict, triage: dict) -> AdaptiveCard:
+    """Build an Adaptive Card with the triage summary."""
     repo = os.environ.get("GITHUB_UPSTREAM_REPO") or os.environ.get("GITHUB_REPOSITORY", "microsoft/teams.py")
-    category = analysis.get("category", "unknown")
-    severity = analysis.get("severity", "info")
-    summary = analysis.get("summary", "No summary available.")
-    packages = ", ".join(analysis.get("affected_packages", [])) or "N/A"
-    labels = ", ".join(analysis.get("suggested_labels", [])) or "N/A"
-    details = _to_str(analysis.get("key_details", "N/A"))
+    severity = triage.get("severity", "info")
+    severity_color = SEVERITY_COLORS.get(severity, "Default")
 
-    return (
-        f"**[{repo}#{issue['number']}]({issue['html_url']}): {issue['title']}**\n\n"
-        f"**Category:** {category} · **Severity:** {severity} · **Author:** @{issue['author']}\n\n"
-        f"{summary}\n\n"
-        f"**Packages:** {packages}\n"
-        f"**Suggested labels:** {labels}\n"
-        f"**Details:** {details}"
+    return AdaptiveCard(
+        version="1.5",
+        body=[
+            TextBlock(
+                text=f"{repo}#{issue['number']}: {issue['title']}",
+                size="Medium",
+                weight="Bolder",
+                wrap=True,
+            ),
+            ColumnSet(
+                columns=[
+                    Column(
+                        width="auto",
+                        items=[
+                            TextBlock(
+                                text=triage.get("category", "unknown").upper(),
+                                weight="Bolder",
+                                is_subtle=True,
+                                size="Small",
+                            ),
+                        ],
+                    ),
+                    Column(
+                        width="auto",
+                        items=[
+                            TextBlock(
+                                text=severity.upper(),
+                                color=severity_color,
+                                weight="Bolder",
+                                size="Small",
+                            ),
+                        ],
+                    ),
+                    Column(
+                        width="stretch",
+                        items=[
+                            TextBlock(
+                                text=f"by @{issue['author']}",
+                                is_subtle=True,
+                                size="Small",
+                                horizontal_alignment="Right",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            Container(
+                style="emphasis",
+                items=[
+                    TextBlock(
+                        text=triage.get("summary", "No summary available."),
+                        wrap=True,
+                    ),
+                ],
+            ),
+            FactSet(
+                facts=[
+                    Fact(
+                        title="Packages",
+                        value=", ".join(triage.get("affected_packages", [])) or "N/A",
+                    ),
+                    Fact(
+                        title="Suggested labels",
+                        value=", ".join(triage.get("suggested_labels", [])) or "N/A",
+                    ),
+                ],
+            ),
+            ActionSet(
+                actions=[
+                    OpenUrlAction(title="View Issue", url=issue["html_url"]),
+                ],
+            ),
+        ],
     )
 
 
-async def send_to_teams(message: str) -> None:
-    """Send the message to Teams via proactive messaging."""
-    conversation_id = os.environ.get("TEAMS_CONVERSATION_ID")
-    if not conversation_id:
-        print("ERROR: TEAMS_CONVERSATION_ID not set")
-        sys.exit(1)
-
-    app = App()
-    await app.initialize()
-    result = await app.send(conversation_id, message)
-    print(f"Message sent to Teams. Activity ID: {result.id}")
+async def send_to_teams(conversation_id: str, app: App, content: object) -> None:
+    """Send content to Teams via proactive messaging."""
+    result = await app.send(conversation_id, content)
+    print(f"Sent to Teams. Activity ID: {result.id}")
 
 
 async def main() -> None:
@@ -167,15 +281,29 @@ async def main() -> None:
     issue = load_issue_from_event()
     print(f"Issue #{issue['number']}: {issue['title']}")
 
-    print("Analyzing issue with GitHub Models API...")
-    analysis = analyze_issue(issue)
-    print(f"Analysis: category={analysis.get('category')}, severity={analysis.get('severity')}")
+    print("Triaging issue...")
+    triage = triage_issue(issue)
+    print(f"Triage: category={triage.get('category')}, severity={triage.get('severity')}")
 
-    print("Building message...")
-    message = build_message(issue, analysis)
+    print("Generating action plan...")
+    action_plan = analyze_issue(issue, triage)
 
-    print("Sending to Teams...")
-    await send_to_teams(message)
+    print("Building triage card...")
+    card = build_triage_card(issue, triage)
+
+    conversation_id = os.environ.get("TEAMS_CONVERSATION_ID")
+    if not conversation_id:
+        print("ERROR: TEAMS_CONVERSATION_ID not set")
+        sys.exit(1)
+
+    app = App()
+    await app.initialize()
+
+    print("Sending triage card...")
+    await send_to_teams(conversation_id, app, card)
+
+    print("Sending action plan...")
+    await send_to_teams(conversation_id, app, action_plan)
 
     print("Done!")
 
