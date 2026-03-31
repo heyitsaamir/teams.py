@@ -81,7 +81,26 @@ jobs:
             --allow-tool='read' \
             --allow-tool='glob' \
             --allow-tool='grep' \
-            --no-ask-user > /tmp/analysis.txt
+            --no-ask-user > /tmp/raw_analysis.txt
+
+          # Strip tool call lines (● prefix and └ prefix) to get just the analysis
+          python3 -c "
+          import sys
+          lines = open('/tmp/raw_analysis.txt').readlines()
+          # Find the last block of non-tool-call text
+          result = []
+          in_result = False
+          for line in lines:
+              stripped = line.strip()
+              if stripped.startswith('●') or stripped.startswith('└') or stripped.startswith('│'):
+                  in_result = False
+                  result = []
+              else:
+                  in_result = True
+                  result.append(line)
+          # Write the final analysis block
+          sys.stdout.write(''.join(result).strip())
+          " > /tmp/analysis.txt
 
           echo "--- Copilot analysis ---"
           cat /tmp/analysis.txt
