@@ -53,33 +53,6 @@ Analyze the issue and respond with ONLY valid JSON (no markdown fencing):
 }\
 """
 
-ANALYSIS_PROMPT = """\
-You are a senior developer on the Microsoft Teams Python SDK. An issue has been filed and triaged.
-
-The SDK is a UV workspace (packages/ directory) with this structure:
-- packages/api/src/microsoft_teams/api/ — Core API clients (BaseClient), models (Activity, Conversation, Account), auth
-- packages/apps/src/microsoft_teams/apps/ — App orchestrator, plugins, routing, events, HttpServer
-- packages/common/src/microsoft_teams/common/ — HTTP client abstraction, logging, storage
-- packages/cards/src/microsoft_teams/cards/ — Adaptive cards
-- packages/ai/src/microsoft_teams/ai/ — AI/function calling utilities
-- packages/botbuilder/src/microsoft_teams/botbuilder/ — Bot Framework integration plugin
-- packages/devtools/src/microsoft_teams/devtools/ — Development tools plugin
-
-Key patterns:
-- Pydantic models with camelCase aliases (ConfigDict(alias_generator=to_camel))
-- Protocol classes for interfaces (not ABCs)
-- Concrete clients inherit from BaseClient with operation class composition
-- async/await for all API calls
-
-Given the issue and its triage, provide a concrete action plan in markdown. Include:
-1. **Root cause** — What's likely going wrong or what's missing
-2. **Files to investigate** — Specific paths in the packages/ directory to look at
-3. **Proposed approach** — Step-by-step what a developer should do to resolve this
-4. **Estimated complexity** — Small (< 1 day), Medium (1-3 days), or Large (3+ days)
-
-Be specific and actionable. Reference actual package paths and patterns.\
-"""
-
 SEVERITY_COLORS: dict[str, str] = {
     "critical": "Attention",
     "high": "Attention",
@@ -175,17 +148,13 @@ def triage_issue(issue: dict) -> dict:
     return json.loads(content)
 
 
-def analyze_issue(issue: dict, triage: dict) -> str:
-    """Generate a detailed action plan for the issue."""
-    user_message = (
-        f"{_issue_as_user_message(issue)}\n\n"
-        f"---\nTriage result:\n"
-        f"Category: {triage.get('category')}\n"
-        f"Severity: {triage.get('severity')}\n"
-        f"Summary: {triage.get('summary')}\n"
-        f"Affected packages: {', '.join(triage.get('affected_packages', []))}"
-    )
-    return _call_model(ANALYSIS_PROMPT, user_message)
+def load_copilot_analysis() -> str:
+    """Read the Copilot CLI analysis from file."""
+    path = os.environ.get("COPILOT_ANALYSIS_FILE", "/tmp/analysis.txt")
+    if not os.path.exists(path):
+        return "_No Copilot analysis available._"
+    with open(path) as f:
+        return f.read().strip() or "_No Copilot analysis available._"
 
 
 def build_triage_card(issue: dict, triage: dict) -> AdaptiveCard:
@@ -285,8 +254,8 @@ async def main() -> None:
     triage = triage_issue(issue)
     print(f"Triage: category={triage.get('category')}, severity={triage.get('severity')}")
 
-    print("Generating action plan...")
-    action_plan = analyze_issue(issue, triage)
+    print("Loading Copilot analysis...")
+    action_plan = load_copilot_analysis()
 
     print("Building triage card...")
     card = build_triage_card(issue, triage)
