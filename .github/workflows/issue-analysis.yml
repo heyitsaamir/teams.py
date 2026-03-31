@@ -42,7 +42,9 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv pip install --system openai microsoft-teams-apps microsoft-teams-cards
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python openai microsoft-teams-apps microsoft-teams-cards
 
       - name: Analyze issue and notify Teams
         env:
@@ -52,4 +54,4 @@ jobs:
           TEAMS_CONVERSATION_ID: ${{ secrets.TEAMS_CONVERSATION_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
-        run: python .github/scripts/analyze_issue.py
+        run: .venv/bin/python .github/scripts/analyze_issue.py
