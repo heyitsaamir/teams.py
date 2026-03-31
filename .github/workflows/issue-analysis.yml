@@ -54,4 +54,5 @@ jobs:
           TEAMS_CONVERSATION_ID: ${{ secrets.TEAMS_CONVERSATION_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
+          GITHUB_UPSTREAM_REPO: microsoft/teams.py
         run: .venv/bin/python .github/scripts/analyze_issue.py

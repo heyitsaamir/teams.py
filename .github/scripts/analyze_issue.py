@@ -94,7 +94,7 @@ def load_issue_from_event() -> dict:
 
 def fetch_issue(issue_number: int) -> dict:
     """Fetch an issue from the GitHub API by number."""
-    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    repo = os.environ.get("GITHUB_UPSTREAM_REPO") or os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GITHUB_TOKEN", "")
     if not repo:
         print("ERROR: GITHUB_REPOSITORY not set")
