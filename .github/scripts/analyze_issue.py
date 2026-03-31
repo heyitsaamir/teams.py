@@ -239,12 +239,6 @@ def build_triage_card(issue: dict, triage: dict) -> AdaptiveCard:
     )
 
 
-async def send_to_teams(conversation_id: str, app: App, content: object) -> None:
-    """Send content to Teams via proactive messaging."""
-    result = await app.send(conversation_id, content)
-    print(f"Sent to Teams. Activity ID: {result.id}")
-
-
 async def main() -> None:
     print("Loading issue from event payload...")
     issue = load_issue_from_event()
@@ -269,10 +263,13 @@ async def main() -> None:
     await app.initialize()
 
     print("Sending triage card...")
-    await send_to_teams(conversation_id, app, card)
+    result = await app.send(conversation_id, card)
+    print(f"Triage card sent. Activity ID: {result.id}")
 
-    print("Sending action plan...")
-    await send_to_teams(conversation_id, app, action_plan)
+    print("Sending action plan as threaded reply...")
+    thread_id = f"{conversation_id};messageid={result.id}"
+    result = await app.send(thread_id, action_plan)
+    print(f"Action plan sent. Activity ID: {result.id}")
 
     print("Done!")
 
