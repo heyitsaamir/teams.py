@@ -53,27 +53,35 @@ jobs:
         id: issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_NUMBER: ${{ inputs.issue_number }}
+          # Pass event data through env vars to avoid shell injection
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EVENT_ISSUE_TITLE: ${{ github.event.issue.title }}
+          EVENT_ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          EVENT_ISSUE_URL: ${{ github.event.issue.html_url }}
+          EVENT_ISSUE_LABELS: ${{ toJSON(github.event.issue.labels) }}
+          EVENT_ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Fetch issue from API
-            ISSUE=$(gh api repos/microsoft/teams.py/issues/${{ inputs.issue_number }})
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ISSUE=$(gh api repos/microsoft/teams.py/issues/"$INPUT_NUMBER")
             echo "number=$(echo "$ISSUE" | jq -r '.number')" >> "$GITHUB_OUTPUT"
             echo "title=$(echo "$ISSUE" | jq -r '.title')" >> "$GITHUB_OUTPUT"
             echo "author=$(echo "$ISSUE" | jq -r '.user.login')" >> "$GITHUB_OUTPUT"
             echo "html_url=$(echo "$ISSUE" | jq -r '.html_url')" >> "$GITHUB_OUTPUT"
             echo "labels=$(echo "$ISSUE" | jq -r '[.labels[].name] | join(",")')" >> "$GITHUB_OUTPUT"
-            # Body can be multiline — use a delimiter
             echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
             echo "$ISSUE" | jq -r '.body // ""' >> "$GITHUB_OUTPUT"
             echo "BODY_EOF" >> "$GITHUB_OUTPUT"
           else
-            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
-            echo "title=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"
-            echo "author=${{ github.event.issue.user.login }}" >> "$GITHUB_OUTPUT"
-            echo "html_url=${{ github.event.issue.html_url }}" >> "$GITHUB_OUTPUT"
-            echo "labels=$(echo '${{ toJSON(github.event.issue.labels) }}' | jq -r '[.[].name] | join(",")')" >> "$GITHUB_OUTPUT"
+            echo "number=$EVENT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "title=$EVENT_ISSUE_TITLE" >> "$GITHUB_OUTPUT"
+            echo "author=$EVENT_ISSUE_AUTHOR" >> "$GITHUB_OUTPUT"
+            echo "html_url=$EVENT_ISSUE_URL" >> "$GITHUB_OUTPUT"
+            echo "labels=$(echo "$EVENT_ISSUE_LABELS" | jq -r '[.[].name] | join(",")')" >> "$GITHUB_OUTPUT"
             echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
-            echo "${{ github.event.issue.body }}" >> "$GITHUB_OUTPUT"
+            printf '%s' "$EVENT_ISSUE_BODY" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
             echo "BODY_EOF" >> "$GITHUB_OUTPUT"
           fi
 
