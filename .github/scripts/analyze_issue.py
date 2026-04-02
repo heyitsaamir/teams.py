@@ -116,7 +116,24 @@ def _issue_as_user_message(issue: dict) -> str:
 def triage_issue(issue: dict) -> dict:
     """Triage the issue: category, severity, summary, etc."""
     content = _call_model(TRIAGE_PROMPT, _issue_as_user_message(issue))
-    return json.loads(content)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        # Model may wrap JSON in markdown fences — try extracting it
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(content[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+        return {
+            "category": "question",
+            "severity": "info",
+            "summary": f"Automated triage failed to parse model response. Review issue #{issue['number']} manually.",
+            "affected_packages": [],
+            "suggested_labels": [],
+        }
 
 
 def load_copilot_analysis() -> str:

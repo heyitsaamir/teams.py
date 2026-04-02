@@ -63,26 +63,34 @@ jobs:
           EVENT_ISSUE_LABELS: ${{ toJSON(github.event.issue.labels) }}
           EVENT_ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
+          # Use heredoc form for all fields to prevent output injection
+          # (issue titles/authors could contain newlines or %)
+          write_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter="EOF_${name}_$$"
+            {
+              printf '%s<<%s\n' "$name" "$delimiter"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delimiter"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             ISSUE=$(gh api repos/microsoft/teams.py/issues/"$INPUT_NUMBER")
-            echo "number=$(echo "$ISSUE" | jq -r '.number')" >> "$GITHUB_OUTPUT"
-            echo "title=$(echo "$ISSUE" | jq -r '.title')" >> "$GITHUB_OUTPUT"
-            echo "author=$(echo "$ISSUE" | jq -r '.user.login')" >> "$GITHUB_OUTPUT"
-            echo "html_url=$(echo "$ISSUE" | jq -r '.html_url')" >> "$GITHUB_OUTPUT"
-            echo "labels=$(echo "$ISSUE" | jq -r '[.labels[].name] | join(",")')" >> "$GITHUB_OUTPUT"
-            echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
-            echo "$ISSUE" | jq -r '.body // ""' >> "$GITHUB_OUTPUT"
-            echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+            write_output "number" "$(echo "$ISSUE" | jq -r '.number')"
+            write_output "title" "$(echo "$ISSUE" | jq -r '.title')"
+            write_output "author" "$(echo "$ISSUE" | jq -r '.user.login')"
+            write_output "html_url" "$(echo "$ISSUE" | jq -r '.html_url')"
+            write_output "labels" "$(echo "$ISSUE" | jq -r '[.labels[].name] | join(",")')"
+            write_output "body" "$(echo "$ISSUE" | jq -r '.body // ""')"
           else
-            echo "number=$EVENT_ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "title=$EVENT_ISSUE_TITLE" >> "$GITHUB_OUTPUT"
-            echo "author=$EVENT_ISSUE_AUTHOR" >> "$GITHUB_OUTPUT"
-            echo "html_url=$EVENT_ISSUE_URL" >> "$GITHUB_OUTPUT"
-            echo "labels=$(echo "$EVENT_ISSUE_LABELS" | jq -r '[.[].name] | join(",")')" >> "$GITHUB_OUTPUT"
-            echo "body<<BODY_EOF" >> "$GITHUB_OUTPUT"
-            printf '%s' "$EVENT_ISSUE_BODY" >> "$GITHUB_OUTPUT"
-            echo "" >> "$GITHUB_OUTPUT"
-            echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+            write_output "number" "$EVENT_ISSUE_NUMBER"
+            write_output "title" "$EVENT_ISSUE_TITLE"
+            write_output "author" "$EVENT_ISSUE_AUTHOR"
+            write_output "html_url" "$EVENT_ISSUE_URL"
+            write_output "labels" "$(echo "$EVENT_ISSUE_LABELS" | jq -r '[.[].name] | join(",")')"
+            write_output "body" "$EVENT_ISSUE_BODY"
           fi
 
       - name: Analyze issue with Copilot CLI
